@@ -155,7 +155,7 @@ internal class PlayPublisherPlugin : Plugin<Project> {
         val android = project.the<BaseAppModuleExtension>()
         (android as ExtensionAware).extensions.add(PLAY_CONFIGS_PATH, extensionContainer)
 
-        android.onVariants v@{
+        android.onVariantProperties p@{
             val variantName = name.capitalize()
             val extension = buildExtension(
                     project,
@@ -166,275 +166,273 @@ internal class PlayPublisherPlugin : Plugin<Project> {
             project.logger.debug("Extension computed for variant '$name': ${extension.toConfig()}")
             project.afterEvaluate {
                 project.logger.debug(
-                        "Extension resolved for variant '${this@v.name}': ${extension.toConfig()}")
+                        "Extension resolved for variant '${this@p.name}': ${extension.toConfig()}")
             }
 
             if (!extension.enabled.get()) {
                 project.logger.info("Gradle Play Publisher is disabled for variant '$name'.")
-                return@v
+                return@p
             }
             extension.validateCreds()
 
-            onProperties p@{
-                fun findApkFiles(): Provider<List<String>> = extension.artifactDir.map {
-                    val customDir = it.asFile
-                    if (customDir.isFile && customDir.extension == "apk") {
-                        listOf(it.asFile.absolutePath)
-                    } else {
-                        it.asFileTree.matching {
-                            include("*.apk")
-                        }.map { it.absolutePath }
-                    }
-                }.orElse(artifacts.get(ArtifactType.APK).map {
-                    artifacts.getBuiltArtifactsLoader().load(it)
-                            ?.elements?.map { it.outputFile }.sneakyNull()
-                })
+            fun findApkFiles(): Provider<List<String>> = extension.artifactDir.map {
+                val customDir = it.asFile
+                if (customDir.isFile && customDir.extension == "apk") {
+                    listOf(it.asFile.absolutePath)
+                } else {
+                    it.asFileTree.matching {
+                        include("*.apk")
+                    }.map { it.absolutePath }
+                }
+            }.orElse(artifacts.get(ArtifactType.APK).map {
+                artifacts.getBuiltArtifactsLoader().load(it)
+                        ?.elements?.map { it.outputFile }.sneakyNull()
+            })
 
-                fun findBundleFile(
-                ): Provider<RegularFile> = extension.artifactDir.map { customDir ->
-                    if (customDir.asFile.isFile && customDir.asFile.extension == "aab") {
-                        customDir.file(".")
-                    } else {
-                        customDir.asFileTree.matching {
-                            include("*.aab")
-                        }.singleOrNull()?.let {
-                            customDir.file(it.toString())
-                        } ?: customDir.file("ERROR_no-unique-aab-found")
-                    }
-                }.orElse(artifacts.get(ArtifactType.BUNDLE))
-
-                fun findDeobfuscationFile(
-                ): Provider<RegularFile> = extension.artifactDir.map { customDir ->
+            fun findBundleFile(
+            ): Provider<RegularFile> = extension.artifactDir.map { customDir ->
+                if (customDir.asFile.isFile && customDir.asFile.extension == "aab") {
+                    customDir.file(".")
+                } else {
                     customDir.asFileTree.matching {
-                        include("mapping.txt")
-                    }.singleOrNull()?.let { customDir.file(it.absolutePath) }.sneakyNull()
-                }.orElse(project.provider {
-                    artifacts.get(ArtifactType.OBFUSCATION_MAPPING_FILE).takeUnless {
-                        extension.artifactDir.isPresent
-                    }
-                }.flatMap { it })
+                        include("*.aab")
+                    }.singleOrNull()?.let {
+                        customDir.file(it.toString())
+                    } ?: customDir.file("ERROR_no-unique-aab-found")
+                }
+            }.orElse(artifacts.get(ArtifactType.BUNDLE))
 
-                val appId = applicationId.get()
+            fun findDeobfuscationFile(
+            ): Provider<RegularFile> = extension.artifactDir.map { customDir ->
+                customDir.asFileTree.matching {
+                    include("mapping.txt")
+                }.singleOrNull()?.let { customDir.file(it.absolutePath) }.sneakyNull()
+            }.orElse(project.provider {
+                artifacts.get(ArtifactType.OBFUSCATION_MAPPING_FILE).takeUnless {
+                    extension.artifactDir.isPresent
+                }
+            }.flatMap { it })
 
-                val publishInternalSharingApkTask = project.newTask<PublishInternalSharingApk>(
-                        "upload${variantName}PrivateApk",
-                        """
+            val appId = applicationId.get()
+
+            val publishInternalSharingApkTask = project.newTask<PublishInternalSharingApk>(
+                    "upload${variantName}PrivateApk",
+                    """
                         |Uploads Internal Sharing APK for variant '$name'.
                         |   See https://github.com/Triple-T/gradle-play-publisher#uploading-an-internal-sharing-artifact
                         """.trimMargin(),
-                        arrayOf(extension, appId)
-                ) {
-                    apks.from(findApkFiles())
-                    outputDirectory.set(project.layout.buildDirectory.dir(
-                            "outputs/internal-sharing/apk/${this@v.name}"))
-                }
+                    arrayOf(extension, appId)
+            ) {
+                apks.from(findApkFiles())
+                outputDirectory.set(project.layout.buildDirectory.dir(
+                        "outputs/internal-sharing/apk/${this@p.name}"))
+            }
 
-                val publishInternalSharingBundleTask = project.newTask<PublishInternalSharingBundle>(
-                        "upload${variantName}PrivateBundle",
-                        """
+            val publishInternalSharingBundleTask = project.newTask<PublishInternalSharingBundle>(
+                    "upload${variantName}PrivateBundle",
+                    """
                         |Uploads Internal Sharing App Bundle for variant '$name'.
                         |   See https://github.com/Triple-T/gradle-play-publisher#uploading-an-internal-sharing-artifact
                         """.trimMargin(),
-                        arrayOf(extension, appId)
-                ) {
-                    bundle.set(findBundleFile())
-                    outputDirectory.set(project.layout.buildDirectory.dir(
-                            "outputs/internal-sharing/bundle/${this@v.name}"))
-                }
+                    arrayOf(extension, appId)
+            ) {
+                bundle.set(findBundleFile())
+                outputDirectory.set(project.layout.buildDirectory.dir(
+                        "outputs/internal-sharing/bundle/${this@p.name}"))
+            }
 
-                project.newTask<InstallInternalSharingArtifact>(
-                        "install${variantName}PrivateArtifact",
-                        """
+            project.newTask<InstallInternalSharingArtifact>(
+                    "install${variantName}PrivateArtifact",
+                    """
                         |Launches an intent to install an Internal Sharing artifact for variant '$name'.
                         |   See https://github.com/Triple-T/gradle-play-publisher#installing-internal-sharing-artifacts
                         """.trimMargin(),
-                        arrayOf(android)
-                ) {
-                    uploadedArtifacts.set(if (extension.defaultToAppBundles.get()) {
-                        publishInternalSharingBundleTask.flatMap { it.outputDirectory }
-                    } else {
-                        publishInternalSharingApkTask.flatMap { it.outputDirectory }
-                    })
-                }
+                    arrayOf(android)
+            ) {
+                uploadedArtifacts.set(if (extension.defaultToAppBundles.get()) {
+                    publishInternalSharingBundleTask.flatMap { it.outputDirectory }
+                } else {
+                    publishInternalSharingApkTask.flatMap { it.outputDirectory }
+                })
+            }
 
 
-                if (!validateDebuggability()) return@p
+            if (!validateDebuggability()) return@p
 
-                val genEditTask = project.getGenEditTask(appId, extension)
-                val commitEditTask = project.getCommitEditTask(appId, extension)
-                val editFile = genEditTask.flatMap { it.editIdFile }
-                genEditTask { finalizedBy(commitEditTask) }
+            val genEditTask = project.getGenEditTask(appId, extension)
+            val commitEditTask = project.getCommitEditTask(appId, extension)
+            val editFile = genEditTask.flatMap { it.editIdFile }
+            genEditTask { finalizedBy(commitEditTask) }
 
-                val bootstrapTask = project.newTask<Bootstrap>(
-                        "bootstrap$variantName",
-                        """
+            val bootstrapTask = project.newTask<Bootstrap>(
+                    "bootstrap$variantName",
+                    """
                         |Downloads the Play Store listing metadata for variant '$name'.
                         |   See https://github.com/Triple-T/gradle-play-publisher#quickstart
                         """.trimMargin(),
-                        arrayOf(extension, appId, bootstrapOptionsHolder)
-                ) {
-                    srcDir.set(project.file("src/$flavorNameOrDefault/$PLAY_PATH"))
-                    editIdFile.set(editFile)
+                    arrayOf(extension, appId, bootstrapOptionsHolder)
+            ) {
+                srcDir.set(project.file("src/$flavorNameOrDefault/$PLAY_PATH"))
+                editIdFile.set(editFile)
 
-                    dependsOn(genEditTask)
-                }
-                bootstrapAllTask { dependsOn(bootstrapTask) }
+                dependsOn(genEditTask)
+            }
+            bootstrapAllTask { dependsOn(bootstrapTask) }
 
-                val resourceDir = project.newTask<GenerateResources>(
-                        "generate${variantName}PlayResources"
-                ) {
-                    resDir.set(project.layout.buildDirectory.dir(playPath))
+            val resourceDir = project.newTask<GenerateResources>(
+                    "generate${variantName}PlayResources"
+            ) {
+                resDir.set(project.layout.buildDirectory.dir(playPath))
 
-                    mustRunAfter(bootstrapTask)
-                }.also { task ->
-                    // TODO(asaveau): remove once there's an API for sourceSets in the new model
-                    android.applicationVariants
-                            .matching { it.name == this@v.name }
-                            .whenObjectAdded {
-                                val dirs = sourceSets.map {
-                                    project.layout.projectDirectory.dir("src/${it.name}/$PLAY_PATH")
-                                }
-                                task {
-                                    resSrcDirs.set(dirs)
-                                    resSrcTree.setFrom(dirs.map {
-                                        project.fileTree(it).apply { exclude("**/.*") }
-                                    })
-                                }
+                mustRunAfter(bootstrapTask)
+            }.also { task ->
+                // TODO(asaveau): remove once there's an API for sourceSets in the new model
+                android.applicationVariants
+                        .matching { it.name == this@p.name }
+                        .whenObjectAdded {
+                            val dirs = sourceSets.map {
+                                project.layout.projectDirectory.dir("src/${it.name}/$PLAY_PATH")
                             }
-                }.flatMap {
-                    it.resDir
-                }
+                            task {
+                                resSrcDirs.set(dirs)
+                                resSrcTree.setFrom(dirs.map {
+                                    project.fileTree(it).apply { exclude("**/.*") }
+                                })
+                            }
+                        }
+            }.flatMap {
+                it.resDir
+            }
 
-                val publishListingTask = project.newTask<PublishListings>(
-                        "publish${variantName}Listing",
-                        """
+            val publishListingTask = project.newTask<PublishListings>(
+                    "publish${variantName}Listing",
+                    """
                         |Uploads all Play Store metadata for variant '$name'.
                         |   See https://github.com/Triple-T/gradle-play-publisher#publishing-listings
                         """.trimMargin(),
-                        arrayOf(extension, appId)
-                ) {
-                    resDir.set(resourceDir)
-                    editIdFile.set(editFile)
+                    arrayOf(extension, appId)
+            ) {
+                resDir.set(resourceDir)
+                editIdFile.set(editFile)
 
-                    dependsOn(genEditTask)
-                }
-                commitEditTask { mustRunAfter(publishListingTask) }
-                publishListingAllTask { dependsOn(publishListingTask) }
+                dependsOn(genEditTask)
+            }
+            commitEditTask { mustRunAfter(publishListingTask) }
+            publishListingAllTask { dependsOn(publishListingTask) }
 
-                val publishProductsTask = project.newTask<PublishProducts>(
-                        "publish${variantName}Products",
-                        """
+            val publishProductsTask = project.newTask<PublishProducts>(
+                    "publish${variantName}Products",
+                    """
                         |Uploads all Play Store in-app products for variant '$name'.
                         |   See https://github.com/Triple-T/gradle-play-publisher#publishing-in-app-products
                         """.trimMargin(),
-                        arrayOf(extension, appId)
-                ) {
-                    productsDir.setFrom(resourceDir.map {
-                        it.dir(PRODUCTS_PATH).asFileTree.matching { include("*.json") }
+                    arrayOf(extension, appId)
+            ) {
+                productsDir.setFrom(resourceDir.map {
+                    it.dir(PRODUCTS_PATH).asFileTree.matching { include("*.json") }
+                })
+            }
+            publishProductsAllTask { dependsOn(publishProductsTask) }
+
+            val staticVersionCodes = outputs.map { it.versionCode.get() }
+            val processArtifactVersionCodes = project.newTask<ProcessArtifactVersionCodes>(
+                    "process${variantName}VersionCodes",
+                    constructorArgs = arrayOf(extension, appId)
+            ) {
+                editIdFile.set(editFile)
+                versionCodes.set(staticVersionCodes)
+                playVersionCodes.set(project.layout.buildDirectory.file(
+                        "$INTERMEDIATES_OUTPUT_PATH/${this@p.name}/available-version-codes.txt"))
+
+                dependsOn(genEditTask)
+            }
+            if (extension.resolutionStrategy.get() == ResolutionStrategy.AUTO) {
+                for ((i, output) in outputs.withIndex()) {
+                    output.versionCode.set(processArtifactVersionCodes.map {
+                        it.playVersionCodes.get().asFile.readLines()[i].toInt()
                     })
                 }
-                publishProductsAllTask { dependsOn(publishProductsTask) }
-
-                val staticVersionCodes = outputs.map { it.versionCode.get() }
-                val processArtifactVersionCodes = project.newTask<ProcessArtifactVersionCodes>(
-                        "process${variantName}VersionCodes",
-                        constructorArgs = arrayOf(extension, appId)
-                ) {
-                    editIdFile.set(editFile)
-                    versionCodes.set(staticVersionCodes)
-                    playVersionCodes.set(project.layout.buildDirectory.file(
-                            "$INTERMEDIATES_OUTPUT_PATH/${this@v.name}/available-version-codes.txt"))
-
-                    dependsOn(genEditTask)
-                }
-                if (extension.resolutionStrategy.get() == ResolutionStrategy.AUTO) {
-                    for ((i, output) in outputs.withIndex()) {
-                        output.versionCode.set(processArtifactVersionCodes.map {
-                            it.playVersionCodes.get().asFile.readLines()[i].toInt()
-                        })
-                    }
-                }
+            }
 
 
-                fun PublishArtifactTaskBase.configureInputs() {
-                    editIdFile.set(editFile)
-                    releaseNotesDir.set(resourceDir.map {
-                        it.dir(RELEASE_NOTES_PATH).also { it.asFile.safeMkdirs() }
-                    })
-                    consoleNamesDir.set(resourceDir.map {
-                        it.dir(RELEASE_NAMES_PATH).also { it.asFile.safeMkdirs() }
-                    })
-                }
+            fun PublishArtifactTaskBase.configureInputs() {
+                editIdFile.set(editFile)
+                releaseNotesDir.set(resourceDir.map {
+                    it.dir(RELEASE_NOTES_PATH).also { it.asFile.safeMkdirs() }
+                })
+                consoleNamesDir.set(resourceDir.map {
+                    it.dir(RELEASE_NAMES_PATH).also { it.asFile.safeMkdirs() }
+                })
+            }
 
-                val publishApkTask = project.newTask<PublishApk>(
-                        "publish${variantName}Apk",
-                        """
+            val publishApkTask = project.newTask<PublishApk>(
+                    "publish${variantName}Apk",
+                    """
                         |Uploads APK for variant '$name'.
                         |   See https://github.com/Triple-T/gradle-play-publisher#publishing-apks
                         """.trimMargin(),
-                        arrayOf(extension, appId)
-                ) {
-                    configureInputs()
-                    apks.from(findApkFiles())
-                    mappingFile.set(findDeobfuscationFile())
+                    arrayOf(extension, appId)
+            ) {
+                configureInputs()
+                apks.from(findApkFiles())
+                mappingFile.set(findDeobfuscationFile())
 
-                    dependsOn(genEditTask)
-                }
-                commitEditTask { mustRunAfter(publishApkTask) }
-                publishApkAllTask { dependsOn(publishApkTask) }
+                dependsOn(genEditTask)
+            }
+            commitEditTask { mustRunAfter(publishApkTask) }
+            publishApkAllTask { dependsOn(publishApkTask) }
 
-                val publishBundleTask = project.newTask<PublishBundle>(
-                        "publish${variantName}Bundle",
-                        """
+            val publishBundleTask = project.newTask<PublishBundle>(
+                    "publish${variantName}Bundle",
+                    """
                         |Uploads App Bundle for variant '$name'.
                         |   See https://github.com/Triple-T/gradle-play-publisher#publishing-an-app-bundle
                         """.trimMargin(),
-                        arrayOf(extension, appId)
-                ) {
-                    configureInputs()
-                    bundle.set(findBundleFile())
-                    mappingFile.set(findDeobfuscationFile())
+                    arrayOf(extension, appId)
+            ) {
+                configureInputs()
+                bundle.set(findBundleFile())
+                mappingFile.set(findDeobfuscationFile())
 
-                    dependsOn(genEditTask)
-                }
-                commitEditTask { mustRunAfter(publishBundleTask) }
-                publishBundleAllTask { dependsOn(publishBundleTask) }
+                dependsOn(genEditTask)
+            }
+            commitEditTask { mustRunAfter(publishBundleTask) }
+            publishBundleAllTask { dependsOn(publishBundleTask) }
 
-                val promoteReleaseTask = project.newTask<PromoteRelease>(
-                        "promote${variantName}Artifact",
-                        """
+            val promoteReleaseTask = project.newTask<PromoteRelease>(
+                    "promote${variantName}Artifact",
+                    """
                         |Promotes a release for variant '$name'.
                         |   See https://github.com/Triple-T/gradle-play-publisher#promoting-artifacts
                         """.trimMargin(),
-                        arrayOf(extension, appId)
-                ) {
-                    configureInputs()
+                    arrayOf(extension, appId)
+            ) {
+                configureInputs()
 
-                    dependsOn(genEditTask)
-                    mustRunAfter(publishApkTask)
-                    mustRunAfter(publishBundleTask)
-                }
-                commitEditTask { mustRunAfter(promoteReleaseTask) }
-                promoteReleaseAllTask { dependsOn(promoteReleaseTask) }
+                dependsOn(genEditTask)
+                mustRunAfter(publishApkTask)
+                mustRunAfter(publishBundleTask)
+            }
+            commitEditTask { mustRunAfter(promoteReleaseTask) }
+            promoteReleaseAllTask { dependsOn(promoteReleaseTask) }
 
-                val publishTask = project.newTask<GlobalPublishableArtifactLifecycleTask>(
-                        "publish$variantName",
-                        """
+            val publishTask = project.newTask<GlobalPublishableArtifactLifecycleTask>(
+                    "publish$variantName",
+                    """
                         |Uploads APK or App Bundle and all Play Store metadata for variant '$name'.
                         |   See https://github.com/Triple-T/gradle-play-publisher#managing-artifacts
                         """.trimMargin(),
-                        arrayOf(extension)
-                ) {
-                    dependsOn(if (extension.defaultToAppBundles.get()) {
-                        publishBundleTask
-                    } else {
-                        publishApkTask
-                    })
-                    dependsOn(publishListingTask)
-                    dependsOn(publishProductsTask)
-                }
-                publishAllTask { dependsOn(publishTask) }
+                    arrayOf(extension)
+            ) {
+                dependsOn(if (extension.defaultToAppBundles.get()) {
+                    publishBundleTask
+                } else {
+                    publishApkTask
+                })
+                dependsOn(publishListingTask)
+                dependsOn(publishProductsTask)
             }
+            publishAllTask { dependsOn(publishTask) }
         }
 
         project.afterEvaluate {

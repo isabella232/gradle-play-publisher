@@ -12,7 +12,7 @@ buildscript {
 
 plugins {
     `lifecycle-base`
-    id("com.github.ben-manes.versions") version "0.29.0"
+    id("com.github.ben-manes.versions") version "0.33.0"
 
     // Needed to support publishing all modules atomically
     id("de.marcphilipp.nexus-publish") version "0.4.0" apply false
